@@ -1,0 +1,965 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AgentPlayground — Autonomous AI Agent Platform</title>
+  <meta name="description" content="Deploy a full AI agent platform on your own VPS in minutes. Pre-built agent teams, local LLMs via Ollama, self-improving workflows, and full automation — one Docker command." />
+  <meta property="og:title" content="AgentPlayground — Autonomous AI Agent Platform" />
+  <meta property="og:description" content="Your own AI agents. Your own server. One command to deploy." />
+  <meta property="og:type" content="website" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%231a1a1a'/><circle cx='16' cy='10' r='2.5' fill='%23f5f5f5'/><circle cx='10' cy='20' r='2.5' fill='%23888'/><circle cx='22' cy='20' r='2.5' fill='%23888'/><line x1='16' y1='12.5' x2='10' y2='17.5' stroke='%23555' stroke-width='1.5' stroke-linecap='round'/><line x1='16' y1='12.5' x2='22' y2='17.5' stroke='%23555' stroke-width='1.5' stroke-linecap='round'/><line x1='12.5' y1='20' x2='19.5' y2='20' stroke='%23555' stroke-width='1.5' stroke-linecap='round'/></svg>" />
+  <style>
+    /* ── Reset & base ────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:         #080809;
+      --bg-2:       #0e0e10;
+      --bg-3:       #141416;
+      --border:     rgba(255,255,255,0.07);
+      --border-2:   rgba(255,255,255,0.12);
+      --text:       #f0f0f2;
+      --muted:      #6b7280;
+      --accent:     #6366f1;
+      --accent-2:   #818cf8;
+      --green:      #34d399;
+      --yellow:     #fbbf24;
+      --red:        #f87171;
+      --font:       -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      --mono:       'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: inherit; text-decoration: none; }
+    img { display: block; max-width: 100%; }
+
+    /* ── Layout ─────────────────────────────────────────────── */
+    .container { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
+    section { padding: 80px 0; }
+
+    /* ── Nav ────────────────────────────────────────────────── */
+    nav {
+      position: sticky; top: 0; z-index: 100;
+      border-bottom: 1px solid var(--border);
+      background: rgba(8,8,9,0.85);
+      backdrop-filter: blur(12px);
+    }
+    .nav-inner {
+      display: flex; align-items: center; justify-content: space-between;
+      height: 60px;
+    }
+    .nav-logo {
+      display: flex; align-items: center; gap: 10px;
+      font-weight: 700; font-size: 1rem; letter-spacing: -0.01em;
+    }
+    .nav-logo-icon {
+      width: 32px; height: 32px;
+      background: var(--accent);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px;
+    }
+    .nav-links {
+      display: flex; align-items: center; gap: 28px;
+      list-style: none;
+    }
+    .nav-links a { font-size: 0.875rem; color: var(--muted); transition: color 0.15s; }
+    .nav-links a:hover { color: var(--text); }
+    .btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 9px 20px; border-radius: 8px;
+      font-size: 0.875rem; font-weight: 600;
+      cursor: pointer; border: none; transition: all 0.15s;
+    }
+    .btn-primary {
+      background: var(--accent); color: #fff;
+    }
+    .btn-primary:hover { background: #5254d4; transform: translateY(-1px); }
+    .btn-ghost {
+      background: transparent; color: var(--text);
+      border: 1px solid var(--border-2);
+    }
+    .btn-ghost:hover { background: rgba(255,255,255,0.04); }
+    .btn-lang {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 12px; border-radius: 6px;
+      font-size: 0.8rem; font-weight: 600; cursor: pointer;
+      background: transparent; border: 1px solid var(--border-2);
+      color: var(--muted); transition: all 0.15s;
+    }
+    .btn-lang:hover { color: var(--text); border-color: var(--accent); }
+
+    /* ── Hero ───────────────────────────────────────────────── */
+    .hero {
+      padding: 100px 0 80px;
+      text-align: center;
+    }
+    .hero-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 5px 14px; border-radius: 999px; font-size: 0.75rem;
+      background: rgba(99,102,241,0.12);
+      border: 1px solid rgba(99,102,241,0.25);
+      color: var(--accent-2); font-weight: 500;
+      margin-bottom: 28px;
+    }
+    .hero-badge-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--green);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+    h1 {
+      font-size: clamp(2.4rem, 6vw, 4rem);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.1;
+      margin-bottom: 20px;
+    }
+    h1 .accent { color: var(--accent-2); }
+    .hero-sub {
+      font-size: clamp(1rem, 2vw, 1.2rem);
+      color: var(--muted);
+      max-width: 560px; margin: 0 auto 40px;
+      line-height: 1.65;
+    }
+    .hero-actions {
+      display: flex; justify-content: center; gap: 12px; flex-wrap: wrap;
+    }
+    .hero-terminal {
+      margin: 60px auto 0;
+      max-width: 640px;
+      background: var(--bg-3);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      text-align: left;
+    }
+    .terminal-bar {
+      display: flex; align-items: center; gap: 6px;
+      padding: 10px 14px;
+      background: var(--bg-2);
+      border-bottom: 1px solid var(--border);
+    }
+    .terminal-dot {
+      width: 11px; height: 11px; border-radius: 50%;
+    }
+    .terminal-body {
+      padding: 20px 22px;
+      font-family: var(--mono);
+      font-size: 0.82rem;
+      line-height: 1.8;
+    }
+    .t-comment { color: #4b5563; }
+    .t-cmd    { color: var(--green); }
+    .t-arg    { color: var(--text); }
+    .t-out    { color: var(--muted); }
+    .t-ok     { color: var(--green); }
+
+    /* ── Stats bar ───────────────────────────────────────────── */
+    .stats-bar {
+      padding: 28px 0;
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+    .stats-inner {
+      display: flex; justify-content: center; flex-wrap: wrap;
+      gap: 0;
+    }
+    .stat {
+      padding: 0 48px;
+      border-right: 1px solid var(--border);
+      text-align: center;
+    }
+    .stat:last-child { border-right: none; }
+    .stat-value {
+      font-size: 1.8rem; font-weight: 800;
+      letter-spacing: -0.03em;
+      background: linear-gradient(135deg, var(--text), var(--accent-2));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .stat-label { font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
+
+    /* ── Section titles ──────────────────────────────────────── */
+    .section-label {
+      display: inline-block;
+      font-size: 0.7rem; font-weight: 700; letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--accent-2);
+      margin-bottom: 12px;
+    }
+    h2 {
+      font-size: clamp(1.6rem, 4vw, 2.4rem);
+      font-weight: 800; letter-spacing: -0.03em;
+      line-height: 1.15; margin-bottom: 14px;
+    }
+    .section-desc {
+      font-size: 1rem; color: var(--muted); max-width: 520px;
+      line-height: 1.7;
+    }
+
+    /* ── Features grid ───────────────────────────────────────── */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 16px;
+      margin-top: 48px;
+    }
+    .feature-card {
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 28px;
+      transition: border-color 0.2s, transform 0.2s;
+    }
+    .feature-card:hover {
+      border-color: var(--border-2);
+      transform: translateY(-2px);
+    }
+    .feature-icon {
+      width: 42px; height: 42px; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px; margin-bottom: 16px;
+    }
+    .feature-card h3 {
+      font-size: 1rem; font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .feature-card p {
+      font-size: 0.875rem; color: var(--muted); line-height: 1.65;
+    }
+
+    /* ── How it works ────────────────────────────────────────── */
+    .flywheel {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      margin-top: 48px;
+      max-width: 680px;
+    }
+    .flywheel-step {
+      display: flex; gap: 20px; align-items: flex-start;
+    }
+    .flywheel-line {
+      display: flex; flex-direction: column; align-items: center;
+      width: 36px; flex-shrink: 0;
+    }
+    .flywheel-num {
+      width: 36px; height: 36px; border-radius: 50%;
+      background: var(--bg-3); border: 1px solid var(--border-2);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.75rem; font-weight: 700; color: var(--accent-2);
+      flex-shrink: 0;
+    }
+    .flywheel-connector {
+      width: 1px; background: var(--border); flex: 1;
+      min-height: 28px;
+    }
+    .flywheel-content {
+      padding-bottom: 28px; padding-top: 6px;
+    }
+    .flywheel-content h3 {
+      font-size: 0.95rem; font-weight: 700; margin-bottom: 4px;
+    }
+    .flywheel-content p {
+      font-size: 0.85rem; color: var(--muted); line-height: 1.6;
+    }
+
+    /* ── Stack grid ──────────────────────────────────────────── */
+    .stack-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+      margin-top: 40px;
+    }
+    .stack-item {
+      background: var(--bg-2); border: 1px solid var(--border);
+      border-radius: 10px; padding: 16px 20px;
+      display: flex; align-items: center; gap: 12px;
+    }
+    .stack-item-icon {
+      width: 36px; height: 36px; border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; flex-shrink: 0;
+    }
+    .stack-item p { font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
+    .stack-item h4 { font-size: 0.875rem; font-weight: 600; }
+
+    /* ── Pricing ─────────────────────────────────────────────── */
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+      margin-top: 48px;
+    }
+    .plan-card {
+      background: var(--bg-2); border: 1px solid var(--border);
+      border-radius: 16px; padding: 32px;
+      position: relative;
+    }
+    .plan-card.featured {
+      border-color: var(--accent);
+      background: rgba(99,102,241,0.05);
+    }
+    .plan-badge {
+      position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
+      background: var(--accent); color: #fff;
+      font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em;
+      text-transform: uppercase; padding: 4px 14px; border-radius: 999px;
+    }
+    .plan-name { font-size: 0.8rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+    .plan-price {
+      font-size: 2.2rem; font-weight: 800; letter-spacing: -0.04em;
+      margin-bottom: 6px;
+    }
+    .plan-price sub { font-size: 0.9rem; font-weight: 500; color: var(--muted); vertical-align: baseline; }
+    .plan-desc { font-size: 0.82rem; color: var(--muted); margin-bottom: 24px; line-height: 1.55; }
+    .plan-features { list-style: none; display: flex; flex-direction: column; gap: 10px; margin-bottom: 28px; }
+    .plan-features li { display: flex; align-items: flex-start; gap: 8px; font-size: 0.85rem; }
+    .plan-features li::before { content: "✓"; color: var(--green); font-weight: 700; flex-shrink: 0; }
+    .plan-features li.no::before { content: "–"; color: var(--muted); }
+    .plan-features li.no { color: var(--muted); }
+    .plan-cta { width: 100%; text-align: center; justify-content: center; }
+
+    /* ── CTA section ─────────────────────────────────────────── */
+    .cta-section {
+      text-align: center;
+      background: linear-gradient(135deg, rgba(99,102,241,0.08), rgba(99,102,241,0.02));
+      border: 1px solid rgba(99,102,241,0.15);
+      border-radius: 24px;
+      padding: 72px 40px;
+      margin: 0 0 80px;
+    }
+    .cta-section h2 { margin-bottom: 14px; }
+    .cta-section p { color: var(--muted); max-width: 480px; margin: 0 auto 36px; }
+    .cta-actions { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; }
+
+    /* ── Footer ──────────────────────────────────────────────── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 40px 0;
+    }
+    .footer-inner {
+      display: flex; justify-content: space-between; align-items: center;
+      flex-wrap: wrap; gap: 16px;
+    }
+    .footer-logo { font-weight: 700; font-size: 0.9rem; }
+    .footer-links { display: flex; gap: 24px; }
+    .footer-links a { font-size: 0.82rem; color: var(--muted); }
+    .footer-links a:hover { color: var(--text); }
+    .footer-copy { font-size: 0.8rem; color: var(--muted); width: 100%; text-align: center; margin-top: 12px; }
+
+    /* ── Utilities ───────────────────────────────────────────── */
+    .text-center { text-align: center; }
+    .divider { border: none; border-top: 1px solid var(--border); margin: 0; }
+
+    /* ── Responsive ──────────────────────────────────────────── */
+    @media (max-width: 640px) {
+      .nav-links { display: none; }
+      .stat { padding: 12px 24px; }
+      .hero { padding: 64px 0 48px; }
+      section { padding: 56px 0; }
+      .cta-section { padding: 48px 24px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Navigation ──────────────────────────────────────────────────────────── -->
+<nav>
+  <div class="container">
+    <div class="nav-inner">
+      <a href="/" class="nav-logo">
+        <svg width="28" height="28" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect width="32" height="32" rx="8" fill="#1a1a1a"/>
+          <circle cx="16" cy="10" r="2.5" fill="#f5f5f5"/>
+          <circle cx="10" cy="20" r="2.5" fill="#888"/>
+          <circle cx="22" cy="20" r="2.5" fill="#888"/>
+          <line x1="16" y1="12.5" x2="10" y2="17.5" stroke="#555" stroke-width="1.5" stroke-linecap="round"/>
+          <line x1="16" y1="12.5" x2="22" y2="17.5" stroke="#555" stroke-width="1.5" stroke-linecap="round"/>
+          <line x1="12.5" y1="20" x2="19.5" y2="20" stroke="#555" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+        AgentPlayground
+      </a>
+      <ul class="nav-links">
+        <li><a href="#features" data-i18n="nav.features">Features</a></li>
+        <li><a href="#how-it-works" data-i18n="nav.how">How it works</a></li>
+        <li><a href="#stack">Stack</a></li>
+        <li><a href="https://github.com/augustom1/agentplayground-public" target="_blank" rel="noopener">GitHub</a></li>
+        <li><a href="https://ar.agentplayground.net" data-i18n="nav.arService">Servicio AR</a></li>
+      </ul>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <button class="btn-lang" id="lang-toggle" onclick="toggleLang()" title="Switch language">
+          🇪🇸 ES
+        </button>
+        <a href="https://github.com/augustom1/agentplayground-public" target="_blank" rel="noopener" class="btn btn-primary" data-i18n="nav.cta">
+          Fork →
+        </a>
+      </div>
+    </div>
+  </div>
+</nav>
+
+<!-- ── Hero ────────────────────────────────────────────────────────────────── -->
+<section class="hero">
+  <div class="container">
+    <div class="hero-badge">
+      <span class="hero-badge-dot"></span>
+      <span data-i18n="hero.badge">Open Source · Self-Hosted · Free to Deploy</span>
+    </div>
+
+    <h1 data-i18n="hero.h1">
+      Your own AI agents.<br />
+      <span class="accent">Your own server.</span>
+    </h1>
+
+    <p class="hero-sub" data-i18n="hero.sub">
+      AgentPlayground gives you a full autonomous agent platform — pre-built teams,
+      local LLMs, workflow automation, and a self-improving tool catalog —
+      deployed on your VPS in one command.
+    </p>
+
+    <div class="hero-actions">
+      <a href="https://github.com/augustom1/agentplayground-public" target="_blank" rel="noopener" class="btn btn-primary" data-i18n="hero.cta1">
+        Ver en GitHub →
+      </a>
+      <a href="https://ar.agentplayground.net" class="btn btn-ghost" data-i18n="hero.cta2">
+        Servicio gestionado (AR)
+      </a>
+    </div>
+
+    <div class="hero-terminal">
+      <div class="terminal-bar">
+        <div class="terminal-dot" style="background:#ef4444"></div>
+        <div class="terminal-dot" style="background:#f59e0b"></div>
+        <div class="terminal-dot" style="background:#22c55e"></div>
+      </div>
+      <div class="terminal-body">
+        <div><span class="t-comment"># Clone &amp; deploy on any Ubuntu VPS</span></div>
+        <div><span class="t-cmd">git clone</span> <span class="t-arg">https://github.com/augustom1/agentplayground-public /opt/vps</span></div>
+        <div><span class="t-cmd">cd</span> <span class="t-arg">/opt/vps &amp;&amp; bash setup.sh</span></div>
+        <div>&nbsp;</div>
+        <div><span class="t-out">━━━ Setting up your stack ━━━</span></div>
+        <div><span class="t-ok">[✓]</span> <span class="t-out">Docker installed</span></div>
+        <div><span class="t-ok">[✓]</span> <span class="t-out">Secrets generated</span></div>
+        <div><span class="t-ok">[✓]</span> <span class="t-out">PostgreSQL + Redis started</span></div>
+        <div><span class="t-ok">[✓]</span> <span class="t-out">Agent Dashboard live → https://app.yourdomain.com</span></div>
+        <div><span class="t-ok">[✓]</span> <span class="t-out">Ollama pulling qwen2.5:7b …</span></div>
+        <div>&nbsp;</div>
+        <div><span class="t-ok">Done.</span> <span class="t-out">Your platform is live.</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Stats bar ────────────────────────────────────────────────────────────── -->
+<div class="stats-bar">
+  <div class="container">
+    <div class="stats-inner">
+      <div class="stat">
+        <div class="stat-value">1 cmd</div>
+        <div class="stat-label" data-i18n="stats.deploy">Full stack deploy</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value">5+</div>
+        <div class="stat-label" data-i18n="stats.teams">Pre-built agent teams</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value">$0</div>
+        <div class="stat-label" data-i18n="stats.cost">LLM cost with Ollama</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value">100%</div>
+        <div class="stat-label" data-i18n="stats.infra">Your infrastructure</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Features ─────────────────────────────────────────────────────────────── -->
+<section id="features">
+  <div class="container">
+    <div>
+      <span class="section-label" data-i18n="features.label">Features</span>
+      <h2 data-i18n="features.h2">Everything you need.<br />Nothing you don't.</h2>
+      <p class="section-desc" data-i18n="features.desc">
+        A complete autonomous agent platform built on open standards.
+        No vendor lock-in. Runs on any server you own.
+      </p>
+    </div>
+
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon" style="background:rgba(99,102,241,0.12)">🤖</div>
+        <h3 data-i18n="f1.title">Pre-built Agent Teams</h3>
+        <p data-i18n="f1.desc">
+          Dev Core, DevOps, Product & Design, Business & Growth, and a Command Center coordinator
+          — ready to work out of the box with full system prompts and capability sets.
+        </p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="background:rgba(251,191,36,0.12)">🧠</div>
+        <h3 data-i18n="f2.title">Local LLMs via Ollama</h3>
+        <p data-i18n="f2.desc">
+          Run Qwen, Llama, Mistral, and DeepSeek on your own hardware — zero API cost
+          for routine tasks. Claude handles the complex reasoning when needed.
+        </p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="background:rgba(52,211,153,0.12)">🔄</div>
+        <h3 data-i18n="f3.title">Self-Improving Tool Catalog</h3>
+        <p data-i18n="f3.desc">
+          Agents detect repeated workflows and convert them into permanent, reusable skills.
+          The more you use it, the cheaper and faster it gets.
+        </p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="background:rgba(248,113,113,0.12)">⚡</div>
+        <h3 data-i18n="f4.title">n8n Workflow Automation</h3>
+        <p data-i18n="f4.desc">
+          Visual automation builder included. Connect your agents to 400+ integrations
+          — emails, webhooks, databases, APIs — without writing code.
+        </p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="background:rgba(96,165,250,0.12)">🗂️</div>
+        <h3 data-i18n="f5.title">Multi-tenant Ready</h3>
+        <p data-i18n="f5.desc">
+          Role-based access (admin / user / viewer), plan tiers (free / pro / enterprise),
+          and isolated team permissions built in from day one.
+        </p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="background:rgba(167,139,250,0.12)">📊</div>
+        <h3 data-i18n="f6.title">Dashboard & Scheduling</h3>
+        <p data-i18n="f6.desc">
+          Customizable widget dashboard, calendar scheduler, recurring task runner,
+          and full activity logs — all backed by PostgreSQL.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="divider" />
+
+<!-- ── How it works ──────────────────────────────────────────────────────────── -->
+<section id="how-it-works">
+  <div class="container">
+    <div>
+      <span class="section-label" data-i18n="hw.label">The Flywheel</span>
+      <h2 data-i18n="hw.h2">A platform that gets better<br />every time you use it.</h2>
+      <p class="section-desc" data-i18n="hw.desc">
+        Unlike static automation tools, AgentPlayground learns. Every solved problem
+        becomes a reusable tool. Every repeated task gets cheaper.
+      </p>
+    </div>
+
+    <div class="flywheel">
+      <div class="flywheel-step">
+        <div class="flywheel-line">
+          <div class="flywheel-num">1</div>
+          <div class="flywheel-connector"></div>
+        </div>
+        <div class="flywheel-content">
+          <h3 data-i18n="hw1.title">Describe a problem in Chat</h3>
+          <p data-i18n="hw1.desc">Tell the Coordinator agent what you need — it routes to the right team automatically.</p>
+        </div>
+      </div>
+      <div class="flywheel-step">
+        <div class="flywheel-line">
+          <div class="flywheel-num">2</div>
+          <div class="flywheel-connector"></div>
+        </div>
+        <div class="flywheel-content">
+          <h3 data-i18n="hw2.title">Agents execute and delegate</h3>
+          <p data-i18n="hw2.desc">Claude-powered agents break down tasks, call tools (web search, APIs, CLI), and return results.</p>
+        </div>
+      </div>
+      <div class="flywheel-step">
+        <div class="flywheel-line">
+          <div class="flywheel-num">3</div>
+          <div class="flywheel-connector"></div>
+        </div>
+        <div class="flywheel-content">
+          <h3 data-i18n="hw3.title">Patterns become permanent tools</h3>
+          <p data-i18n="hw3.desc">When a workflow repeats, the agent logs it and converts it into a reusable skill in the catalog.</p>
+        </div>
+      </div>
+      <div class="flywheel-step">
+        <div class="flywheel-line">
+          <div class="flywheel-num">4</div>
+          <div class="flywheel-connector"></div>
+        </div>
+        <div class="flywheel-content">
+          <h3 data-i18n="hw4.title">Local LLMs take over routine work</h3>
+          <p data-i18n="hw4.desc">As your tool catalog grows, more tasks run on Ollama (free) instead of Claude. Cost drops over time.</p>
+        </div>
+      </div>
+      <div class="flywheel-step">
+        <div class="flywheel-line">
+          <div class="flywheel-num">5</div>
+        </div>
+        <div class="flywheel-content">
+          <h3 data-i18n="hw5.title">A scalable, self-improving system</h3>
+          <p data-i18n="hw5.desc">You end up with a custom AI stack that runs autonomously, built around your specific workflows.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="divider" />
+
+<!-- ── Stack ─────────────────────────────────────────────────────────────────── -->
+<section id="stack">
+  <div class="container">
+    <div class="text-center">
+      <span class="section-label" data-i18n="stack.label">Open Stack</span>
+      <h2 data-i18n="stack.h2">Built on proven open-source tools.</h2>
+      <p class="section-desc" style="margin: 0 auto;" data-i18n="stack.desc">
+        Every component is replaceable. No black boxes. You own everything.
+      </p>
+    </div>
+
+    <div class="stack-grid">
+      <div class="stack-item">
+        <div class="stack-item-icon" style="background:rgba(0,0,0,0.3)">⚫</div>
+        <div>
+          <h4>Next.js 16</h4>
+          <p>Dashboard UI — React 19, TypeScript, Tailwind</p>
+        </div>
+      </div>
+      <div class="stack-item">
+        <div class="stack-item-icon" style="background:rgba(52,211,153,0.1)">🐘</div>
+        <div>
+          <h4>PostgreSQL + pgvector</h4>
+          <p>Primary database + semantic search ready</p>
+        </div>
+      </div>
+      <div class="stack-item">
+        <div class="stack-item-icon" style="background:rgba(248,113,113,0.1)">🔴</div>
+        <div>
+          <h4>Redis</h4>
+          <p>Caching and queue backend</p>
+        </div>
+      </div>
+      <div class="stack-item">
+        <div class="stack-item-icon" style="background:rgba(251,191,36,0.1)">⚙️</div>
+        <div>
+          <h4>n8n</h4>
+          <p>Visual workflow automation, 400+ connectors</p>
+        </div>
+      </div>
+      <div class="stack-item">
+        <div class="stack-item-icon" style="background:rgba(99,102,241,0.1)">🦙</div>
+        <div>
+          <h4>Ollama</h4>
+          <p>Local LLMs — Llama, Qwen, Mistral, DeepSeek</p>
+        </div>
+      </div>
+      <div class="stack-item">
+        <div class="stack-item-icon" style="background:rgba(96,165,250,0.1)">🐳</div>
+        <div>
+          <h4>Docker</h4>
+          <p>Full stack containerized, one-command deploy</p>
+        </div>
+      </div>
+      <div class="stack-item">
+        <div class="stack-item-icon" style="background:rgba(167,139,250,0.1)">✨</div>
+        <div>
+          <h4>Anthropic Claude</h4>
+          <p>claude-sonnet-4-6 for complex reasoning tasks</p>
+        </div>
+      </div>
+      <div class="stack-item">
+        <div class="stack-item-icon" style="background:rgba(52,211,153,0.1)">🔒</div>
+        <div>
+          <h4>Traefik + Let's Encrypt</h4>
+          <p>Automatic HTTPS, zero config SSL</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="divider" />
+
+<!-- ── Pricing ────────────────────────────────────────────────────────────────── -->
+<section id="pricing">
+  <div class="container">
+    <div class="text-center">
+      <span class="section-label">Pricing</span>
+      <h2>Start free. Scale when ready.</h2>
+      <p class="section-desc" style="margin: 0 auto;">
+        All tiers run on your own VPS. You pay for credits you use — no surprise bills.
+        Free tier includes Ollama so you can run local models at zero cost.
+      </p>
+    </div>
+
+    <div class="pricing-grid">
+      <!-- Free -->
+      <div class="plan-card">
+        <div class="plan-name">Free</div>
+        <div class="plan-price">$0 <sub>/mo</sub></div>
+        <div class="plan-desc">
+          500 free credits per month. No Claude API — use local Ollama models for free.
+        </div>
+        <ul class="plan-features">
+          <li>500 credits/month included</li>
+          <li>Ollama local models (free)</li>
+          <li>2 agent teams · 3 agents each</li>
+          <li>n8n automation</li>
+          <li>50 API calls/day</li>
+          <li class="no">Claude API (upgrade to enable)</li>
+          <li class="no">Credit top-ups</li>
+        </ul>
+        <a href="https://github.com/augustom1/agentplayground-public" target="_blank" rel="noopener" class="btn btn-ghost plan-cta">Self-host on GitHub</a>
+      </div>
+
+      <!-- Pro -->
+      <div class="plan-card featured">
+        <div class="plan-badge">Most Popular</div>
+        <div class="plan-name">Pro</div>
+        <div class="plan-price">Pay as you go</div>
+        <div class="plan-desc">
+          1,000 free credits/month + buy more as needed. Claude API enabled.
+          From $2 per 2,000 credits.
+        </div>
+        <ul class="plan-features">
+          <li>1,000 credits/month included</li>
+          <li>Claude API access</li>
+          <li>Ollama local models (free)</li>
+          <li>20 teams · 20 agents each</li>
+          <li>Unlimited API calls</li>
+          <li>Credit top-ups from $2</li>
+          <li>Priority support</li>
+        </ul>
+        <a href="https://ar.agentplayground.net" class="btn btn-primary plan-cta">Servicio gestionado (AR)</a>
+      </div>
+
+      <!-- Enterprise / VPS -->
+      <div class="plan-card">
+        <div class="plan-name">Managed VPS</div>
+        <div class="plan-price">Custom</div>
+        <div class="plan-desc">
+          We set up and manage your dedicated server. Your clients get
+          their own isolated environment with your branding.
+        </div>
+        <ul class="plan-features">
+          <li>Dedicated VPS setup</li>
+          <li>Your domain + branding</li>
+          <li>All Pro features</li>
+          <li>5,000 credits/month included</li>
+          <li>White-label option</li>
+          <li>Custom integrations</li>
+          <li>Managed updates & backups</li>
+        </ul>
+        <a href="mailto:hello@agentplayground.net?subject=Managed VPS" class="btn btn-ghost plan-cta">Contactar</a>
+      </div>
+    </div>
+
+    <p style="text-align:center; margin-top:24px; font-size:0.8rem; color:var(--muted);">
+      Credits don't expire. No automatic charges — top up when you need more.
+    </p>
+  </div>
+</section>
+
+<!-- ── CTA ──────────────────────────────────────────────────────────────────── -->
+<section>
+  <div class="container">
+    <div class="cta-section">
+      <span class="section-label" data-i18n="cta.label">Get Started</span>
+      <h2 data-i18n="cta.h2">Your agents are one command away.</h2>
+      <p data-i18n="cta.desc">
+        Deploy a full autonomous agent platform on your own server today.
+        Free tier, no credit card required.
+      </p>
+      <div class="cta-actions">
+        <a href="https://github.com/augustom1/agentplayground-public" target="_blank" rel="noopener" class="btn btn-primary" data-i18n="cta.btn1">
+          Fork on GitHub →
+        </a>
+        <a href="mailto:hello@agentplayground.net" class="btn btn-ghost" data-i18n="cta.btn2">
+          Talk to us
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Footer ───────────────────────────────────────────────────────────────── -->
+<footer>
+  <div class="container">
+    <div class="footer-inner">
+      <div class="footer-logo" style="display:flex;align-items:center;gap:8px;">
+        <svg width="22" height="22" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect width="32" height="32" rx="8" fill="#1a1a1a"/>
+          <circle cx="16" cy="10" r="2.5" fill="#f5f5f5"/>
+          <circle cx="10" cy="20" r="2.5" fill="#888"/>
+          <circle cx="22" cy="20" r="2.5" fill="#888"/>
+          <line x1="16" y1="12.5" x2="10" y2="17.5" stroke="#555" stroke-width="1.5" stroke-linecap="round"/>
+          <line x1="16" y1="12.5" x2="22" y2="17.5" stroke="#555" stroke-width="1.5" stroke-linecap="round"/>
+          <line x1="12.5" y1="20" x2="19.5" y2="20" stroke="#555" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+        AgentPlayground
+      </div>
+      <nav class="footer-links">
+        <a href="https://github.com/augustom1/agentplayground-public" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/augustom1/agentplayground-public/issues" target="_blank" rel="noopener">Issues</a>
+        <a href="https://github.com/augustom1/agentplayground-public/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a>
+        <a href="https://ar.agentplayground.net" data-i18n="footer.ar">Servicio AR</a>
+        <a href="mailto:hello@agentplayground.net" data-i18n="footer.contact">Contact</a>
+      </nav>
+    </div>
+    <div class="footer-copy" data-i18n="footer.copy">
+      © 2026 AgentPlayground. Build and own your AI stack.
+    </div>
+  </div>
+</footer>
+
+<script>
+// ── i18n — Language toggle ───────────────────────────────────────────────────
+const T = {
+  en: {
+    "nav.features":   "Features",
+    "nav.how":        "How it works",
+    "nav.arService":  "Managed service (AR)",
+    "nav.cta":        "Fork →",
+    "hero.badge":     "Open Source · Self-Hosted · Free to Deploy",
+    "hero.h1":        "Your own AI agents.<br /><span class=\"accent\">Your own server.</span>",
+    "hero.sub":       "AgentPlayground gives you a full autonomous agent platform — pre-built teams, local LLMs, workflow automation, and a self-improving tool catalog — deployed on your VPS in one command.",
+    "hero.cta1":      "View on GitHub →",
+    "hero.cta2":      "Managed service (AR)",
+    "stats.deploy":   "Full stack deploy",
+    "stats.teams":    "Pre-built agent teams",
+    "stats.cost":     "LLM cost with Ollama",
+    "stats.infra":    "Your infrastructure",
+    "features.label": "Features",
+    "features.h2":    "Everything you need.<br />Nothing you don't.",
+    "features.desc":  "A complete autonomous agent platform built on open standards. No vendor lock-in. Runs on any server you own.",
+    "f1.title": "Pre-built Agent Teams",
+    "f1.desc":  "Dev Core, DevOps, Product &amp; Design, Business &amp; Growth, and a Command Center coordinator — ready to work out of the box with full system prompts and capability sets.",
+    "f2.title": "Local LLMs via Ollama",
+    "f2.desc":  "Run Qwen, Llama, Mistral, and DeepSeek on your own hardware — zero API cost for routine tasks. Claude handles the complex reasoning when needed.",
+    "f3.title": "Self-Improving Tool Catalog",
+    "f3.desc":  "Agents detect repeated workflows and convert them into permanent, reusable skills. The more you use it, the cheaper and faster it gets.",
+    "f4.title": "n8n Workflow Automation",
+    "f4.desc":  "Visual automation builder included. Connect your agents to 400+ integrations — emails, webhooks, databases, APIs — without writing code.",
+    "f5.title": "Multi-tenant Ready",
+    "f5.desc":  "Role-based access (admin / user / viewer), plan tiers (free / pro / enterprise), and isolated team permissions built in from day one.",
+    "f6.title": "Dashboard &amp; Scheduling",
+    "f6.desc":  "Customizable widget dashboard, calendar scheduler, recurring task runner, and full activity logs — all backed by PostgreSQL.",
+    "hw.label": "The Flywheel",
+    "hw.h2":    "A platform that gets better<br />every time you use it.",
+    "hw.desc":  "Unlike static automation tools, AgentPlayground learns. Every solved problem becomes a reusable tool. Every repeated task gets cheaper.",
+    "hw1.title": "Describe a problem in Chat",
+    "hw1.desc":  "Tell the Coordinator agent what you need — it routes to the right team automatically.",
+    "hw2.title": "Agents execute and delegate",
+    "hw2.desc":  "Claude-powered agents break down tasks, call tools (web search, APIs, CLI), and return results.",
+    "hw3.title": "Patterns become permanent tools",
+    "hw3.desc":  "When a workflow repeats, the agent logs it and converts it into a reusable skill in the catalog.",
+    "hw4.title": "Local LLMs take over routine work",
+    "hw4.desc":  "As your tool catalog grows, more tasks run on Ollama (free) instead of Claude. Cost drops over time.",
+    "hw5.title": "A scalable, self-improving system",
+    "hw5.desc":  "You end up with a custom AI stack that runs autonomously, built around your specific workflows.",
+    "stack.label": "Open Stack",
+    "stack.h2":    "Built on proven open-source tools.",
+    "stack.desc":  "Every component is replaceable. No black boxes. You own everything.",
+    "cta.label": "Get Started",
+    "cta.h2":    "Your agents are one command away.",
+    "cta.desc":  "Deploy a full autonomous agent platform on your own server today. Free tier, no credit card required.",
+    "cta.btn1":  "Fork on GitHub →",
+    "cta.btn2":  "Talk to us",
+    "footer.ar":      "Managed service (AR)",
+    "footer.contact": "Contact",
+    "footer.copy":    "© 2026 AgentPlayground. Build and own your AI stack.",
+  },
+  es: {
+    "nav.features":   "Funcionalidades",
+    "nav.how":        "Cómo funciona",
+    "nav.arService":  "Servicio AR",
+    "nav.cta":        "Fork →",
+    "hero.badge":     "Open Source · Autoalojado · Gratis para desplegar",
+    "hero.h1":        "Tus propios agentes de IA.<br /><span class=\"accent\">En tu propio servidor.</span>",
+    "hero.sub":       "AgentPlayground te da una plataforma completa de agentes autónomos — equipos pre-armados, LLMs locales, automatización de flujos y un catálogo de herramientas que se mejora solo — en un solo comando en tu VPS.",
+    "hero.cta1":      "Ver en GitHub →",
+    "hero.cta2":      "Servicio gestionado (AR)",
+    "stats.deploy":   "Deploy de stack completo",
+    "stats.teams":    "Equipos de agentes pre-armados",
+    "stats.cost":     "Costo de LLM con Ollama",
+    "stats.infra":    "Tu infraestructura",
+    "features.label": "Funcionalidades",
+    "features.h2":    "Todo lo que necesitás.<br />Nada más.",
+    "features.desc":  "Una plataforma completa de agentes autónomos construida sobre estándares abiertos. Sin lock-in. Corre en cualquier servidor propio.",
+    "f1.title": "Equipos de Agentes Pre-armados",
+    "f1.desc":  "Dev Core, DevOps, Producto &amp; Diseño, Negocio &amp; Crecimiento, y un coordinador central — listos para trabajar con prompts y capacidades completas.",
+    "f2.title": "LLMs Locales con Ollama",
+    "f2.desc":  "Corré Qwen, Llama, Mistral y DeepSeek en tu propio hardware — costo de API $0 para tareas de rutina. Claude se encarga del razonamiento complejo cuando hace falta.",
+    "f3.title": "Catálogo de Herramientas Auto-mejorante",
+    "f3.desc":  "Los agentes detectan flujos repetidos y los convierten en habilidades reutilizables permanentes. Cuanto más lo usás, más barato y rápido se vuelve.",
+    "f4.title": "Automatización con n8n",
+    "f4.desc":  "Constructor visual de automatizaciones incluido. Conectá tus agentes con 400+ integraciones — emails, webhooks, bases de datos, APIs — sin escribir código.",
+    "f5.title": "Multi-tenant Listo",
+    "f5.desc":  "Control de acceso por rol (admin / usuario / visor), planes (free / pro / enterprise) y permisos por equipo aislados — todo desde el día uno.",
+    "f6.title": "Dashboard &amp; Programación",
+    "f6.desc":  "Dashboard de widgets personalizable, programador de calendario, ejecutor de tareas recurrentes y logs de actividad completos — todo en PostgreSQL.",
+    "hw.label": "El Flywheel",
+    "hw.h2":    "Una plataforma que mejora<br />cada vez que la usás.",
+    "hw.desc":  "A diferencia de las herramientas estáticas, AgentPlayground aprende. Cada problema resuelto se convierte en una herramienta reutilizable. Cada tarea repetida cuesta menos.",
+    "hw1.title": "Describí un problema en el Chat",
+    "hw1.desc":  "Decile al agente Coordinador qué necesitás — él lo redirige al equipo correcto automáticamente.",
+    "hw2.title": "Los agentes ejecutan y delegan",
+    "hw2.desc":  "Agentes con Claude descomponen tareas, llaman herramientas (búsqueda web, APIs, CLI) y devuelven resultados.",
+    "hw3.title": "Los patrones se convierten en herramientas",
+    "hw3.desc":  "Cuando un flujo se repite, el agente lo registra y lo convierte en una habilidad reutilizable en el catálogo.",
+    "hw4.title": "Los LLMs locales se hacen cargo de la rutina",
+    "hw4.desc":  "A medida que crece tu catálogo de herramientas, más tareas corren en Ollama (gratis) en vez de Claude. El costo baja con el tiempo.",
+    "hw5.title": "Un sistema escalable y auto-mejorante",
+    "hw5.desc":  "Terminás con un stack de IA personalizado que funciona de forma autónoma, construido alrededor de tus flujos específicos.",
+    "stack.label": "Stack Abierto",
+    "stack.h2":    "Construido sobre herramientas open source probadas.",
+    "stack.desc":  "Cada componente es reemplazable. Sin cajas negras. Vos sos dueño de todo.",
+    "cta.label": "Empezá Ahora",
+    "cta.h2":    "Tus agentes están a un comando.",
+    "cta.desc":  "Desplegá una plataforma completa de agentes autónomos en tu servidor hoy. Gratis, sin tarjeta.",
+    "cta.btn1":  "Fork en GitHub →",
+    "cta.btn2":  "Hablá con nosotros",
+    "footer.ar":      "Servicio AR",
+    "footer.contact": "Contacto",
+    "footer.copy":    "© 2026 AgentPlayground. Construí y sé dueño de tu stack de IA.",
+  }
+};
+
+let currentLang = localStorage.getItem("lang") || "en";
+
+function applyLang(lang) {
+  const dict = T[lang];
+  document.querySelectorAll("[data-i18n]").forEach(el => {
+    const key = el.getAttribute("data-i18n");
+    if (dict[key] !== undefined) el.innerHTML = dict[key];
+  });
+  const btn = document.getElementById("lang-toggle");
+  if (btn) btn.innerHTML = lang === "en" ? "🇪🇸 ES" : "🇬🇧 EN";
+  document.documentElement.lang = lang;
+}
+
+function toggleLang() {
+  currentLang = currentLang === "en" ? "es" : "en";
+  localStorage.setItem("lang", currentLang);
+  applyLang(currentLang);
+}
+
+// Apply on load (respects saved preference)
+applyLang(currentLang);
+</script>
+
+</body>
+</html>

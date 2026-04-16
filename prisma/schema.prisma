@@ -1,0 +1,632 @@
+// Prisma Schema — Agent Dashboard Platform
+// PostgreSQL with pgvector extension for embeddings
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  extensions = [vector]
+}
+
+// ─── Users & Auth ────────────────────────────────────
+// Roles:  admin | user | viewer
+// Plans:  free | pro | enterprise   ← ready for billing later
+// Add planExpiresAt + a payments table when you go paid.
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  passwordHash  String
+  role          String    @default("user")        // admin | user | viewer
+  plan          String    @default("free")        // free | pro | enterprise
+  planExpiresAt DateTime?                         // null = no expiry
+  active        Boolean   @default(true)          // soft-disable without deleting
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // ── Billing relations (inactive — ready to wire up) ───────────
+  apiUsage  ApiUsage[]
+  credits   UserCredits?
+  invoices  Invoice[]
+
+  @@map("users")
+}
+
+// ─── Agent Teams ─────────────────────────────────────
+
+model AgentTeam {
+  id          String   @id @default(cuid())
+  name        String
+  description String
+  port        Int
+  status      String   @default("idle") // healthy | idle | error | deploying
+  language    String   @default("Python / FastAPI")
+  config      Json?    // arbitrary config JSON
+  permissions String[] // permission scopes (see lib/agent-permissions.ts)
+  isSystemTeam Boolean @default(false) // true for DB Agent, File Manager
+  isImported  Boolean  @default(false)
+  sourceUrl   String?  // URL if downloaded from registry
+
+  tasksCompleted Int    @default(0)
+  lastActivity   String @default("Never")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  agents        Agent[]
+  tasks         Task[]
+  recurringTasks RecurringTask[]
+  scheduledJobs ScheduledJob[]
+  skills        Skill[]
+  cliFunctions  CliFunction[]
+  widgets       Widget[]
+  activityLogs  ActivityLog[]
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("agent_teams")
+}
+
+// ─── Individual Agents ───────────────────────────────
+
+model Agent {
+  id           String   @id @default(cuid())
+  name         String
+  description  String?
+  model        String   @default("claude-sonnet-4-6") // AI model used
+  capabilities String[] // list of capability tags
+  systemPrompt String?  @db.Text
+  temperature  Float    @default(0.7)
+  maxTokens    Int      @default(4096)
+
+  teamId String
+  team   AgentTeam @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("agents")
+}
+
+// ─── Tasks ───────────────────────────────────────────
+
+model Task {
+  id          String   @id @default(cuid())
+  title       String
+  description String?  @db.Text
+  prompt      String?  @db.Text
+  result      String?  @db.Text
+  status      String   @default("pending") // pending | running | completed | failed
+  priority    String   @default("medium")  // low | medium | high | urgent
+
+  teamId String
+  team   AgentTeam @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([teamId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("tasks")
+}
+
+// ─── Recurring Tasks ─────────────────────────────────
+
+model RecurringTask {
+  id          String @id @default(cuid())
+  title       String
+  description String? @db.Text
+  prompt      String? @db.Text
+  cron        String  // cron expression (e.g. "0 9 * * 1" = every Monday 9am)
+  timezone    String  @default("UTC")
+  enabled     Boolean @default(true)
+
+  teamId String
+  team   AgentTeam @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  lastRunAt DateTime?
+  nextRunAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([teamId])
+  @@index([enabled, nextRunAt])
+  @@map("recurring_tasks")
+}
+
+// ─── Scheduled Jobs (Calendar) ───────────────────────
+
+model ScheduledJob {
+  id           String  @id @default(cuid())
+  title        String
+  description  String?
+  scheduledFor DateTime
+  recurring    String  @default("none") // none | daily | weekly | monthly
+  status       String  @default("pending") // pending | running | completed | failed
+  isOffHours   Boolean @default(false)
+
+  teamId   String
+  teamName String
+  team     AgentTeam @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([teamId])
+  @@index([status])
+  @@index([scheduledFor])
+  @@map("scheduled_jobs")
+}
+
+// ─── Skills ──────────────────────────────────────────
+
+model Skill {
+  id          String @id @default(cuid())
+  name        String
+  description String @db.Text
+  category    String @default("general") // general | data | communication | code | research
+  instructions String? @db.Text // how the agent should use this skill
+  examples    Json?   // example inputs/outputs
+
+  teamId String
+  team   AgentTeam @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("skills")
+}
+
+// ─── CLI Functions ───────────────────────────────────
+
+model CliFunction {
+  id          String  @id @default(cuid())
+  name        String
+  command     String  // the actual CLI command template
+  description String?
+  args        Json?   // argument schema
+  dangerous   Boolean @default(false) // requires confirmation?
+
+  teamId String
+  team   AgentTeam @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("cli_functions")
+}
+
+// ─── Improvements / Learnings ────────────────────────
+
+model Improvement {
+  id          String @id @default(cuid())
+  title       String
+  description String @db.Text
+  category    String @default("general") // performance | accuracy | efficiency | ux
+  impact      String @default("medium")  // low | medium | high
+  source      String? // what triggered this improvement
+  applied     Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("improvements")
+}
+
+// ─── Dashboard Widgets ───────────────────────────────
+
+model Widget {
+  id       String @id @default(cuid())
+  type     String // stat | feed | calendar | custom
+  title    String
+  icon     String @default("zap")
+  size     String @default("md") // sm | md | lg
+  position Int    @default(0)
+  config   Json?  // widget-specific config
+
+  teamId String?
+  team   AgentTeam? @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("widgets")
+}
+
+// ─── Activity Log ────────────────────────────────────
+
+model ActivityLog {
+  id        String @id @default(cuid())
+  action    String
+  type      String // task | deploy | error | chat | import | export
+  details   String? @db.Text
+  teamName  String?
+
+  teamId String?
+  team   AgentTeam? @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([teamId])
+  @@index([type])
+  @@index([createdAt])
+  @@map("activity_logs")
+}
+
+// ─── Chat History ────────────────────────────────────
+
+model ChatConversation {
+  id       String @id @default(cuid())
+  title    String?
+  
+  messages ChatMessage[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("chat_conversations")
+}
+
+model ChatMessage {
+  id      String @id @default(cuid())
+  role    String // user | assistant
+  content String @db.Text
+
+  conversationId String
+  conversation   ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@map("chat_messages")
+}
+
+// ─── Playground History ──────────────────────────────
+
+model PlaygroundRun {
+  id     String @id @default(cuid())
+  target String
+  prompt String @db.Text
+  result String @db.Text
+
+  createdAt DateTime @default(now())
+
+  @@map("playground_runs")
+}
+
+// ─── Agent Team Configs (Import/Export) ──────────────
+
+model AgentTeamConfig {
+  id          String @id @default(cuid())
+  name        String
+  description String?
+  version     String @default("1.0.0")
+  author      String?
+  configJson  Json   // full team config for import/export
+  sourceUrl   String? // if downloaded from registry
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("agent_team_configs")
+}
+
+// ─── File Management ─────────────────────────────────
+// Tracks files stored in the /app/data/files/ volume.
+// The path is relative to that base directory.
+
+model FileRecord {
+  id          String   @id @default(cuid())
+  name        String                         // filename (basename)
+  path        String   @unique               // relative path, e.g. "reports/q1.pdf"
+  size        Int      @default(0)           // bytes
+  mimeType    String?                        // detected MIME type
+  isDirectory Boolean  @default(false)
+  embedded    Boolean  @default(false)       // true once indexed into FileEmbedding
+  description String?  @db.Text             // optional agent-written description
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([path])
+  @@index([embedded])
+  @@map("file_records")
+}
+
+// Vector embeddings for file contents — 768-dim (nomic-embed-text via Ollama, free/local)
+model FileEmbedding {
+  id         String                   @id @default(cuid())
+  filePath   String                   // matches FileRecord.path
+  chunkIndex Int      @default(0)     // chunk number (files split into 512-token chunks)
+  content    String   @db.Text        // the chunk text
+  vector     Unsupported("vector(768)")  // nomic-embed-text output dim
+
+  createdAt DateTime @default(now())
+
+  @@index([filePath])
+  @@map("file_embeddings")
+}
+
+// ─── Vector Embeddings (pgvector) ────────────────────
+// General-purpose embeddings for agent/task/skill memory.
+// Uses 1536-dim for OpenAI ada-002 compatibility.
+// For local/free: use FileEmbedding (768-dim, nomic-embed-text).
+
+model Embedding {
+  id        String                   @id @default(cuid())
+  content   String                   @db.Text   // the original text
+  vector    Unsupported("vector(1536)")          // 1536-dim for OpenAI ada-002 compatible
+  metadata  Json?                    // source info, tags, etc.
+  sourceType String                  // agent | task | skill | improvement | knowledge | file
+  sourceId   String                  // ID of the source record
+
+  createdAt DateTime @default(now())
+
+  @@map("embeddings")
+}
+
+// ─── Projects (Vision Phase 1) ───────────────────────────
+
+model Project {
+  id              String   @id @default(cuid())
+  tenantId        String   @default("default")
+  name            String
+  description     String?
+  status          String   @default("active")    // active | paused | completed | archived
+  type            String   @default("one-time")   // one-time | recurring | permanent
+  schedule        Json?                            // { cron, lastRun, nextRun }
+  deliveryChannel String?                          // chat | telegram | email
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([status])
+  @@map("projects")
+}
+
+model ProjectTeam {
+  id        String   @id @default(cuid())
+  projectId String
+  teamId    String
+  role      String?
+  joinedAt  DateTime @default(now())
+
+  @@unique([projectId, teamId])
+  @@index([projectId])
+  @@map("project_teams")
+}
+
+model ProjectOutput {
+  id        String   @id @default(cuid())
+  projectId String
+  type      String                               // report | content | data | file
+  title     String?
+  content   Json?
+  filePath  String?
+  agentId   String
+  createdAt DateTime @default(now())
+
+  @@index([projectId])
+  @@map("project_outputs")
+}
+
+// ─── Channels & Routing (Vision Phase 2) ─────────────────
+
+model Channel {
+  id        String   @id @default(cuid())
+  tenantId  String   @default("default")
+  type      String                               // telegram | discord | email | webhook
+  name      String
+  config    Json                                 // encrypted credentials
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@index([tenantId])
+  @@map("channels")
+}
+
+model ChannelMessage {
+  id             String   @id @default(cuid())
+  tenantId       String   @default("default")
+  channelId      String
+  direction      String                          // inbound | outbound
+  externalUserId String?
+  content        String   @db.Text
+  metadata       Json?
+  agentId        String?
+  projectId      String?
+  createdAt      DateTime @default(now())
+
+  @@index([channelId])
+  @@index([createdAt])
+  @@map("channel_messages")
+}
+
+model RoutingRule {
+  id              String  @id @default(cuid())
+  tenantId        String  @default("default")
+  channelId       String?
+  pattern         String?
+  intentClass     String?
+  targetAgentId   String?
+  targetProjectId String?
+  priority        Int     @default(0)
+  active          Boolean @default(true)
+
+  @@index([tenantId, active])
+  @@map("routing_rules")
+}
+
+// ─── Agent Memory (Vision Phase 4) ───────────────────────
+// NOTE: pgvector embedding column is added manually in VPS mode via raw SQL:
+//   ALTER TABLE "agent_memories" ADD COLUMN embedding vector(1536);
+// Do NOT put Unsupported("vector") here — breaks SQLite laptop mode.
+
+model AgentMemory {
+  id         String    @id @default(cuid())
+  tenantId   String    @default("default")
+  ownerType  String                              // agent | team | project | system
+  ownerId    String
+  content    String    @db.Text
+  memoryType String                              // fact | preference | decision | output
+  importance Float     @default(0.5)
+  createdAt  DateTime  @default(now())
+  accessedAt DateTime  @default(now())
+  expiresAt  DateTime?
+
+  @@index([ownerId])
+  @@index([tenantId, ownerType])
+  @@map("agent_memories")
+}
+
+// ─── Integrations (Vision Phase 2) ───────────────────────
+
+model Integration {
+  id              String    @id @default(cuid())
+  tenantId        String    @default("default")
+  type            String                          // telegram | discord | email | webhook
+  name            String
+  config          Json
+  status          String    @default("active")    // active | inactive | error
+  lastHealthCheck DateTime?
+  createdAt       DateTime  @default(now())
+
+  @@index([tenantId])
+  @@map("integrations")
+}
+
+// ─── Billing Foundation ───────────────────────────────
+// STATUS: SCHEMA ONLY — not enforced yet.
+// To activate: wire trackUsage() into API routes, enforce PLAN_LIMITS in middleware,
+// and connect a payment processor (Stripe recommended) to UserCredits.
+// See lib/pricing.ts for the full pricing config.
+
+// Every API call that consumes resources. Written now (cost = 0), priced later.
+model ApiUsage {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  service     String   // "claude" | "ollama" | "web_search" | "web_browse" | "compute"
+  endpoint    String?  // specific model or API endpoint
+  inputUnits  Float    @default(0)  // input tokens (Claude) or 0
+  outputUnits Float    @default(0)  // output tokens (Claude) or 0
+  units       Float    @default(1)  // API calls, compute minutes, etc.
+  unitType    String   @default("calls") // "tokens" | "calls" | "minutes"
+  credits     Float    @default(0)  // cost in credits (0 until billing is live)
+  metadata    Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("api_usage")
+}
+
+// One row per user — their credit wallet.
+model UserCredits {
+  id                String @id @default(cuid())
+  userId            String @unique
+  user              User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  balance           Float  @default(0)   // spendable credits right now
+  lifetimePurchased Float  @default(0)   // all-time purchased
+  lifetimeUsed      Float  @default(0)   // all-time consumed
+  updatedAt         DateTime @updatedAt
+
+  @@map("user_credits")
+}
+
+// Monthly invoice generated on the 1st of each month.
+model Invoice {
+  id           String            @id @default(cuid())
+  userId       String
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  periodStart  DateTime
+  periodEnd    DateTime
+  status       String            @default("draft") // draft | sent | paid | overdue | void
+  totalCredits Float             @default(0)
+  totalUsd     Float             @default(0)
+  dueAt        DateTime
+  paidAt       DateTime?
+
+  lineItems InvoiceLineItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@map("invoices")
+}
+
+// One row per service per invoice.
+model InvoiceLineItem {
+  id          String   @id @default(cuid())
+  invoiceId   String
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  service     String   // "Claude API" | "Web Search" | "Compute" etc.
+  description String
+  quantity    Float
+  unitType    String
+  credits     Float
+  usdAmount   Float
+
+  createdAt DateTime @default(now())
+
+  @@map("invoice_line_items")
+}
+
+// ─── Self-Optimization System ─────────────────────────
+// Learned protocols: tasks that can be handled by local LLMs instead of Claude API.
+// Auto-generated by the post-task evaluator and weekly scanner.
+
+model TaskProtocol {
+  id              String   @id @default(cuid())
+  name            String                           // human-readable protocol name
+  description     String   @db.Text               // what type of task this covers
+  taskPattern     String   @db.Text               // regex pattern to match similar prompts
+  localModel      String                           // recommended Ollama model
+  systemPrompt    String   @db.Text               // system prompt for the local model
+  instructions    String   @db.Text               // step-by-step guide for local LLM
+  examples        Json?                            // example inputs/outputs
+  confidence      Float    @default(0.8)           // 0.0-1.0 confidence score
+  successCount    Int      @default(0)             // times used successfully
+  failureCount    Int      @default(0)             // times it failed / escalated to API
+  active          Boolean  @default(true)
+  category        String   @default("general")    // classification | extraction | generation | summarization | routing | formatting
+  estimatedSaving Float    @default(0)            // estimated credits saved per use
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([active])
+  @@index([category])
+  @@map("task_protocols")
+}
+
+// Weekly scan results — usage analysis + recommendations
+model OptimizationScan {
+  id               String   @id @default(cuid())
+  weekStart        DateTime
+  weekEnd          DateTime
+  apiCallsTotal    Int      @default(0)
+  localCallsTotal  Int      @default(0)
+  creditsSpent     Float    @default(0)
+  creditsSaved     Float    @default(0)
+  protocolsCreated Int      @default(0)
+  protocolsUpdated Int      @default(0)
+  report           String?  @db.Text             // markdown report
+  recommendations  Json?                          // array of suggestions
+
+  createdAt DateTime @default(now())
+
+  @@index([weekStart])
+  @@map("optimization_scans")
+}

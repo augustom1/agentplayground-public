@@ -1,0 +1,210 @@
+# ─────────────────────────────────────────────────────────────────
+# VPS Master Stack — Production Overlay (Traefik + HTTPS)
+# ─────────────────────────────────────────────────────────────────
+# Adds Traefik as the single entry point with automatic Let's Encrypt
+# SSL. Every service gets its own subdomain. Postgres is locked
+# to the internal network only.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# Required env vars in .env.local:
+#   DOMAIN                  your root domain (e.g. mycompany.com)
+#   ACME_EMAIL              email for Let's Encrypt notifications
+#   POSTGRES_PASSWORD       strong database password
+#   AUTH_SECRET             nextauth secret (openssl rand -hex 32)
+#   CRON_SECRET             cron auth token (openssl rand -hex 32)
+#   N8N_ENCRYPTION_KEY      n8n secret (openssl rand -hex 32)
+#   N8N_BASIC_AUTH_PASSWORD n8n admin password
+#
+# DNS records needed:
+#   A   @               → YOUR_VPS_IP   (root domain)
+#   A   *               → YOUR_VPS_IP   (wildcard — covers all subdomains)
+#
+# Subdomain layout:
+#   app.DOMAIN      → Agent Dashboard (chat + file manager + agent teams)
+#   n8n.DOMAIN      → n8n Automation
+#   files.DOMAIN    → FileBrowser (external file access)
+#   manage.DOMAIN   → Portainer
+#   DOMAIN / www    → Nginx (your company website + client sites)
+#
+# NOTE: Open WebUI removed — AgentPlayground chat IS the Ollama interface.
+# ─────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── Traefik (reverse proxy + automatic HTTPS) ─────────────────
+  traefik:
+    image: traefik:v2.11
+    container_name: vps-traefik
+    restart: unless-stopped
+    environment:
+      - DOCKER_API_VERSION=1.45
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik-certs:/letsencrypt
+    command:
+      # Entrypoints
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      # NOTE: HTTP→HTTPS redirect is done per-router (not entrypoint-level) so
+      # that Traefik's HTTP-01 ACME challenge can serve on port 80 uninterrupted.
+      # Docker provider
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=traefik-proxy
+      # Let's Encrypt (TLS challenge for subdomains)
+      - --certificatesresolvers.le.acme.tlschallenge=true
+      - --certificatesresolvers.le.acme.email=${ACME_EMAIL}
+      - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
+      # Let's Encrypt (HTTP challenge for root domain — more reliable fallback)
+      - --certificatesresolvers.lehttp.acme.httpchallenge=true
+      - --certificatesresolvers.lehttp.acme.httpchallenge.entrypoint=web
+      - --certificatesresolvers.lehttp.acme.email=${ACME_EMAIL}
+      - --certificatesresolvers.lehttp.acme.storage=/letsencrypt/acme.json
+      - --log.level=INFO
+    networks:
+      - proxy
+
+  # ── Dashboard → https://app.DOMAIN ───────────────────────────
+  dashboard:
+    ports: !reset []
+    environment:
+      - NEXT_PUBLIC_APP_URL=https://app.${DOMAIN}
+      - NEXTAUTH_URL=https://app.${DOMAIN}
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=traefik-proxy
+      # HTTPS router
+      - traefik.http.routers.dashboard.rule=Host(`app.${DOMAIN}`)
+      - traefik.http.routers.dashboard.entrypoints=websecure
+      - traefik.http.routers.dashboard.tls=true
+      - traefik.http.routers.dashboard.tls.certresolver=le
+      - traefik.http.services.dashboard.loadbalancer.server.port=3000
+      - traefik.http.middlewares.dashboard-timeout.headers.customrequestheaders.X-Forwarded-Proto=https
+      - traefik.http.routers.dashboard.middlewares=dashboard-timeout
+      # HTTP router → redirect to HTTPS
+      - traefik.http.routers.dashboard-http.rule=Host(`app.${DOMAIN}`)
+      - traefik.http.routers.dashboard-http.entrypoints=web
+      - traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https
+      - traefik.http.middlewares.redirect-to-https.redirectscheme.permanent=true
+      - traefik.http.routers.dashboard-http.middlewares=redirect-to-https
+    networks:
+      - default
+      - proxy
+
+  # ── n8n → https://n8n.DOMAIN ──────────────────────────────────
+  n8n:
+    ports: !reset []
+    environment:
+      - N8N_HOST=n8n.${DOMAIN}
+      - N8N_PROTOCOL=https
+      - WEBHOOK_URL=https://n8n.${DOMAIN}
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=traefik-proxy
+      - traefik.http.routers.n8n.rule=Host(`n8n.${DOMAIN}`)
+      - traefik.http.routers.n8n.entrypoints=websecure
+      - traefik.http.routers.n8n.tls=true
+      - traefik.http.routers.n8n.tls.certresolver=le
+      - traefik.http.services.n8n.loadbalancer.server.port=5678
+      - traefik.http.routers.n8n-http.rule=Host(`n8n.${DOMAIN}`)
+      - traefik.http.routers.n8n-http.entrypoints=web
+      - traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https
+      - traefik.http.middlewares.redirect-to-https.redirectscheme.permanent=true
+      - traefik.http.routers.n8n-http.middlewares=redirect-to-https
+    networks:
+      - default
+      - proxy
+
+  # ── Nginx → https://DOMAIN + https://ar.DOMAIN ───────────────────────────
+  # Also hosts client sites via virtual hosts (add to sites/*.conf)
+  # NOTE: lehttp (HTTP-01) used for root domain — cert already issued, HTTP-01
+  # challenge can now serve on port 80 since entrypoint redirect was removed.
+  nginx:
+    ports: !reset []
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=traefik-proxy
+      # Main router — HTTPS (uses HTTP-01 resolver, cert already exists)
+      - traefik.http.routers.nginx.rule=Host(`${DOMAIN}`)
+      - traefik.http.routers.nginx.entrypoints=websecure
+      - traefik.http.routers.nginx.tls=true
+      - traefik.http.routers.nginx.tls.certresolver=lehttp
+      - traefik.http.services.nginx.loadbalancer.server.port=80
+      # Main router — HTTP (serves ACME challenge OR redirects to HTTPS)
+      - traefik.http.routers.nginx-http.rule=Host(`${DOMAIN}`)
+      - traefik.http.routers.nginx-http.entrypoints=web
+      - traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https
+      - traefik.http.middlewares.redirect-to-https.redirectscheme.permanent=true
+      - traefik.http.routers.nginx-http.middlewares=redirect-to-https
+      # ar.DOMAIN router (same nginx container, separate virtual host in sites/ar.conf)
+      - traefik.http.routers.ar.rule=Host(`ar.${DOMAIN}`)
+      - traefik.http.routers.ar.entrypoints=websecure
+      - traefik.http.routers.ar.tls=true
+      - traefik.http.routers.ar.tls.certresolver=le
+      - traefik.http.routers.ar.service=nginx
+      - traefik.http.routers.ar-http.rule=Host(`ar.${DOMAIN}`)
+      - traefik.http.routers.ar-http.entrypoints=web
+      - traefik.http.routers.ar-http.service=nginx
+      - traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https
+      - traefik.http.middlewares.redirect-to-https.redirectscheme.permanent=true
+      - traefik.http.routers.ar-http.middlewares=redirect-to-https
+    networks:
+      - default
+      - proxy
+
+  # ── FileBrowser → https://files.DOMAIN ───────────────────────
+  filebrowser:
+    ports: !reset []
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=traefik-proxy
+      - traefik.http.routers.filebrowser.rule=Host(`files.${DOMAIN}`)
+      - traefik.http.routers.filebrowser.entrypoints=websecure
+      - traefik.http.routers.filebrowser.tls=true
+      - traefik.http.routers.filebrowser.tls.certresolver=le
+      - traefik.http.services.filebrowser.loadbalancer.server.port=80
+      - traefik.http.routers.filebrowser-http.rule=Host(`files.${DOMAIN}`)
+      - traefik.http.routers.filebrowser-http.entrypoints=web
+      - traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https
+      - traefik.http.middlewares.redirect-to-https.redirectscheme.permanent=true
+      - traefik.http.routers.filebrowser-http.middlewares=redirect-to-https
+    networks:
+      - default
+      - proxy
+
+  # ── Portainer → https://manage.DOMAIN ────────────────────────
+  portainer:
+    ports: !reset []
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=traefik-proxy
+      - traefik.http.routers.portainer.rule=Host(`manage.${DOMAIN}`)
+      - traefik.http.routers.portainer.entrypoints=websecure
+      - traefik.http.routers.portainer.tls=true
+      - traefik.http.routers.portainer.tls.certresolver=le
+      - traefik.http.services.portainer.loadbalancer.server.port=9000
+      - traefik.http.routers.portainer-http.rule=Host(`manage.${DOMAIN}`)
+      - traefik.http.routers.portainer-http.entrypoints=web
+      - traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https
+      - traefik.http.middlewares.redirect-to-https.redirectscheme.permanent=true
+      - traefik.http.routers.portainer-http.middlewares=redirect-to-https
+    networks:
+      - default
+      - proxy
+
+  # ── Postgres — internal only in production ────────────────────
+  postgres:
+    ports: !reset []
+
+volumes:
+  traefik-certs:
+
+networks:
+  proxy:
+    name: traefik-proxy
+    driver: bridge
